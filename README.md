@@ -59,11 +59,22 @@ Airlock gives your agent a glass door. Every outbound call is visible. The dange
 
 ## Quick start
 
-Install Airlock once and use it from any project.
+Airlock needs Node 20 or newer. Install it once and use it from any project. This command clones, builds and links the `airlock` command for you.
 
 ```bash
-npm install -g airlock-proxy
+npm install -g github:rahulbansal16/airlock
 ```
+
+Prefer a local checkout? Clone it and link instead.
+
+```bash
+git clone https://github.com/rahulbansal16/airlock
+cd airlock
+npm install        # builds automatically through the prepare step
+npm link           # puts the airlock command on your PATH
+```
+
+A published package on the npm registry is on the way. Once it lands you will also be able to run `npm install -g airlock-proxy`.
 
 Start the proxy and the dashboard in their own terminal and leave it running.
 
