@@ -33,6 +33,7 @@ Airlock gives your agent a glass door. Every outbound call is visible. The dange
 - ✅ **One click to always trust a host.** Approve once and Airlock remembers it in a persistent allowlist across every future session.
 - ✅ **Full request detail.** Method, URL, headers and body, even over HTTPS, thanks to local TLS interception with a certificate that never leaves your laptop.
 - ✅ **Works with everything your agent spawns.** Claude Code itself, MCP servers, WebFetch, plus `curl`, `wget` and Python scripts run inside Bash.
+- ✅ **History by session.** Every request is attributed to the session that made it, so you can see exactly which Claude Code run called which API. History is saved to disk and survives restarts.
 - ✅ **Zero config to start.** The Anthropic API is trusted out of the box so your agent can always think.
 
 ## Demo
@@ -41,17 +42,18 @@ Airlock gives your agent a glass door. Every outbound call is visible. The dange
 ┌──────────────────────────────────────────── AIRLOCK ─ live ──┐
 │  Pending approval (1)                                         │
 │                                                              │
-│  [ POST ]  https://api.stripe.com/v1/charges                 │
+│  [ POST ]  https://api.stripe.com/v1/charges   refactor-auth │
 │  ▸ headers & body (218 bytes)                                │
 │                                                              │
 │     [ Approve ]  [ Approve & always allow api.stripe.com ]   │
 │     [ Deny ]                                                 │
 │                                                              │
+│  Sessions:   refactor-auth  12      nightly-deploy  3        │
 │  Allowlist:  api.anthropic.com   api.github.com              │
 │                                                              │
-│  Recent activity                                             │
-│   12:04:51  approved   POST  https://api.github.com/repos…   │
-│   12:04:48  auto       GET   https://registry.npmjs.org/…    │
+│  Activity                              filter: all sessions  │
+│   12:04:51  refactor-auth   approved   POST  api.github.com  │
+│   12:04:48  nightly-deploy  auto       GET   registry.npmjs  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -108,11 +110,22 @@ Want to review reads too? Start with `airlock start --gate-reads` and Airlock wi
 ## Commands
 
 - **`airlock start`** starts the proxy and the approval dashboard. Flags: `--proxy-port`, `--ui-port`, `--gate-reads`.
-- **`airlock run <command>`** launches any command with its traffic routed through Airlock, for example `airlock run claude`.
-- **`airlock env`** prints the shell exports to route your current shell. Use it as `eval "$(airlock env)"`.
+- **`airlock run <command>`** launches any command with its traffic routed through Airlock, for example `airlock run claude`. Add `--label <name>` to name the session in the dashboard.
+- **`airlock env`** prints the shell exports to route your current shell. Use it as `eval "$(airlock env)"`. Add `--label <name>` to name the session.
 - **`airlock status`** shows whether Airlock is running and how many requests are waiting.
 - **`airlock allow [host]`** lists your allowlist, or adds a host to it.
 - **`airlock ca`** prints the path to the root certificate.
+
+## History by session
+
+Each time you launch a run, Airlock mints a session id and embeds it in the proxy credentials, which clients send back on every request. The proxy reads that id, threads it through the encrypted tunnel, and tags every request with it. The dashboard then shows a Sessions panel with a request count per session, a session label on each row, and a filter so you can view one session at a time.
+
+```bash
+airlock run --label refactor-auth claude
+airlock run --label nightly-deploy claude
+```
+
+Give two runs different labels and the dashboard tells you exactly which one called which API. History is written to `~/.airlock/history.jsonl` and reloaded on restart, so you keep a durable record of what your agents did on the network.
 
 ## Trusting the certificate
 

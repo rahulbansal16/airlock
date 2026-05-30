@@ -90,6 +90,11 @@
       .tag { font-size: 11px; padding: 1px 7px; border-radius: 5px; background: var(--panel2); color: var(--muted); }
       .tag.approved { color: var(--green); }
       .tag.denied { color: var(--red); }
+      .histhead { display: flex; align-items: center; margin: 28px 0 12px; }
+      .histhead select { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; margin-left: 6px; }
+      .session { font-size: 11px; padding: 1px 7px; border-radius: 5px; background: var(--panel2); color: var(--blue); cursor: pointer; }
+      .chip.active { border-color: var(--blue); }
+      .chip .count { color: var(--muted); }
     </style>
   </head>
   <body>
@@ -104,10 +109,21 @@
       <h2>Pending approval <span id="pcount" class="muted"></span></h2>
       <div id="pending"></div>
 
+      <h2>Sessions</h2>
+      <div class="chips" id="sessions"></div>
+
       <h2>Allowlist</h2>
       <div class="chips" id="allowlist"></div>
 
-      <h2>Recent activity</h2>
+      <div class="histhead">
+        <h2 style="margin:0">Activity</h2>
+        <span class="grow"></span>
+        <label class="muted" style="font-size:12px">filter
+          <select id="filter" onchange="setFilter(this.value)">
+            <option value="">all sessions</option>
+          </select>
+        </label>
+      </div>
       <div class="card" id="history"></div>
     </main>
 
@@ -115,8 +131,19 @@
       const el = (id) => document.getElementById(id);
       const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       const open = new Set();
+      let filter = '';
+      let labels = {};
 
+      function setFilter(v) {
+        filter = v;
+        if (lastState) render(lastState);
+      }
+
+      let lastState = null;
       function render(state) {
+        lastState = state;
+        labels = {};
+        (state.sessions || []).forEach((s) => (labels[s.id] = s.label));
         el('mode').textContent = state.config
           ? 'gating ' + (state.config.gateSafeMethods ? 'all methods' : 'POST/PUT/DELETE/PATCH')
           : '';
@@ -127,6 +154,23 @@
           pending.length === 0
             ? '<div class="empty">No requests waiting. Mutating requests to non-allowlisted hosts will appear here.</div>'
             : pending.map(renderPending).join('');
+
+        el('sessions').innerHTML = (state.sessions || []).length
+          ? state.sessions
+              .map(
+                (s) =>
+                  '<span class="chip' + (filter === s.id ? ' active' : '') + '" onclick="setFilter(\'' +
+                  esc(s.id) + '\')" title="' + esc(s.cwd || '') + '">' + esc(s.label) +
+                  ' <span class="count">' + s.requests + '</span></span>',
+              )
+              .join('')
+          : '<span class="muted">No sessions yet. Start one with <code>airlock run claude</code>.</span>';
+
+        const sel = el('filter');
+        const opts = ['<option value="">all sessions</option>']
+          .concat((state.sessions || []).map((s) => '<option value="' + esc(s.id) + '">' + esc(s.label) + '</option>'));
+        sel.innerHTML = opts.join('');
+        sel.value = filter;
 
         el('allowlist').innerHTML = (state.allowlist || [])
           .map(
@@ -139,14 +183,20 @@
           )
           .join('');
 
-        el('history').innerHTML = (state.history || [])
-          .slice(0, 40)
+        const rows = (state.history || [])
+          .filter((h) => !filter || h.session === filter)
+          .slice(0, 60)
           .map((h) => {
             const cls = h.outcome.startsWith('approved') ? 'approved' : h.outcome === 'denied' ? 'denied' : '';
             const t = new Date(h.at).toLocaleTimeString();
+            const label = labels[h.session] || h.session || 'default';
             return (
               '<div class="hist"><span class="muted">' +
               t +
+              '</span><span class="session" onclick="setFilter(\'' +
+              esc(h.session) +
+              '\')">' +
+              esc(label) +
               '</span><span class="tag ' +
               cls +
               '">' +
@@ -158,7 +208,8 @@
               '</span></div>'
             );
           })
-          .join('') || '<div class="empty">Nothing yet.</div>';
+          .join('');
+        el('history').innerHTML = rows || '<div class="empty">Nothing yet.</div>';
       }
 
       function renderPending(r) {
@@ -181,6 +232,9 @@
           '</span>' +
           '<span class="url">' +
           esc(r.url) +
+          '</span>' +
+          '<span class="session" title="originating session">' +
+          esc(labels[r.session] || r.session || 'default') +
           '</span>' +
           '</div>' +
           '<div class="row">' +

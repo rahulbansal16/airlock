@@ -1,10 +1,14 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import { paths } from './config.js';
+import { Sessions } from './sessions.js';
 
 export interface PendingInfo {
   method: string;
   url: string;
   host: string;
+  session: string;
   headers: Record<string, string>;
   bodyPreview: string;
   bodyTruncated: boolean;
@@ -27,19 +31,30 @@ export interface HistoryEntry {
   method: string;
   url: string;
   host: string;
+  session: string;
   at: number;
   outcome: string;
 }
 
 /**
  * Holds the queue of requests awaiting a human decision and a rolling log of
- * recent outcomes. Emits `update` whenever either changes so the UI can stream
- * live state over SSE.
+ * recent outcomes, each attributed to the session that made the request.
+ * History is appended to history.jsonl so it survives restarts, and the most
+ * recent entries are reloaded on startup. Emits `update` on every change so the
+ * UI can stream live state over SSE.
  */
 export class Store extends EventEmitter {
   private pending = new Map<string, PendingEntry>();
   private history: HistoryEntry[] = [];
-  private maxHistory = 200;
+  private maxHistory = 500;
+
+  constructor(
+    private home: string,
+    private sessions: Sessions,
+  ) {
+    super();
+    this.loadHistory();
+  }
 
   /** Park a request until a decision arrives from the UI. */
   hold(info: PendingInfo): Promise<Decision> {
@@ -55,11 +70,12 @@ export class Store extends EventEmitter {
     const entry = this.pending.get(id);
     if (!entry) return false;
     this.pending.delete(id);
-    this.addHistory({
+    this.record({
       id,
       method: entry.method,
       url: entry.url,
       host: entry.host,
+      session: entry.session,
       at: Date.now(),
       outcome:
         decision.decision === 'allow'
@@ -74,8 +90,8 @@ export class Store extends EventEmitter {
   }
 
   /** Record an auto-allowed request (safe method or allowlisted host). */
-  logAuto(method: string, url: string, host: string, reason: string): void {
-    this.addHistory({ id: randomUUID(), method, url, host, at: Date.now(), outcome: `auto (${reason})` });
+  logAuto(method: string, url: string, host: string, session: string, reason: string): void {
+    this.record({ id: randomUUID(), method, url, host, session, at: Date.now(), outcome: `auto (${reason})` });
     this.emit('update');
   }
 
@@ -88,8 +104,26 @@ export class Store extends EventEmitter {
     };
   }
 
-  private addHistory(h: HistoryEntry): void {
+  private record(h: HistoryEntry): void {
+    this.sessions.touch(h.session);
     this.history.unshift(h);
     if (this.history.length > this.maxHistory) this.history.pop();
+    try {
+      fs.appendFileSync(paths(this.home).history, JSON.stringify(h) + '\n');
+    } catch {
+      /* best effort: dashboard still has the in-memory copy */
+    }
+  }
+
+  private loadHistory(): void {
+    try {
+      const lines = fs.readFileSync(paths(this.home).history, 'utf8').trim().split('\n');
+      this.history = lines
+        .slice(-this.maxHistory)
+        .map((l) => JSON.parse(l) as HistoryEntry)
+        .reverse();
+    } catch {
+      /* no history yet */
+    }
   }
 }

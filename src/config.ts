@@ -46,4 +46,6 @@ export const paths = (home: string) => ({
   caBundle: path.join(home, 'ca-bundle.crt'),
   allowlist: path.join(home, 'allowlist.json'),
   daemon: path.join(home, 'daemon.json'),
+  sessions: path.join(home, 'sessions.json'),
+  history: path.join(home, 'history.jsonl'),
 });

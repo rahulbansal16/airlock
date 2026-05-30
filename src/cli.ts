@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import fs from 'node:fs';
 import { loadConfig, paths } from './config.js';
 import { startDaemon } from './daemon.js';
@@ -8,17 +10,30 @@ import { CertAuthority } from './ca.js';
 import { Allowlist } from './allowlist.js';
 import { log } from './log.js';
 
-/** Environment that routes a child process through the running airlock proxy. */
-function proxyEnv(): Record<string, string> {
+interface DaemonInfo {
+  proxyPort?: number;
+  uiPort?: number;
+}
+
+function daemonInfo(): DaemonInfo {
+  try {
+    return JSON.parse(fs.readFileSync(paths(loadConfig().homeDir).daemon, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Environment that routes a child process through the running airlock proxy.
+ * When a session id is given it is embedded as the proxy username, which
+ * clients send back as Proxy-Authorization so the proxy can attribute requests.
+ */
+function proxyEnv(session?: string): Record<string, string> {
   const config = loadConfig();
   const p = paths(config.homeDir);
-  let daemon: { proxyPort?: number } = {};
-  try {
-    daemon = JSON.parse(fs.readFileSync(p.daemon, 'utf8'));
-  } catch {
-    /* not running — fall back to configured default */
-  }
-  const proxyUrl = `http://127.0.0.1:${daemon.proxyPort ?? config.proxyPort}`;
+  const port = daemonInfo().proxyPort ?? config.proxyPort;
+  const auth = session ? `${encodeURIComponent(session)}:airlock@` : '';
+  const proxyUrl = `http://${auth}127.0.0.1:${port}`;
   const bundle = fs.existsSync(p.caBundle) ? p.caBundle : p.caCert;
   return {
     HTTP_PROXY: proxyUrl,
@@ -32,6 +47,22 @@ function proxyEnv(): Record<string, string> {
     NO_PROXY: '127.0.0.1,localhost',
     no_proxy: '127.0.0.1,localhost',
   };
+}
+
+/** Best-effort registration of a session with the running daemon. */
+async function registerSession(meta: { id: string; label?: string; cwd?: string; command?: string }): Promise<void> {
+  const port = daemonInfo().uiPort;
+  if (!port) return;
+  try {
+    await fetch(`http://127.0.0.1:${port}/api/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(meta),
+      signal: AbortSignal.timeout(1500),
+    });
+  } catch {
+    /* daemon not reachable — the proxy still tags by id from the request */
+  }
 }
 
 const program = new Command();
@@ -80,8 +111,12 @@ program
 program
   .command('env')
   .description('Print shell exports that route a session through airlock (use: eval "$(airlock env)")')
-  .action(() => {
-    const lines = Object.entries(proxyEnv()).map(([k, v]) => `export ${k}=${v}`);
+  .option('--label <name>', 'name this session in the dashboard history')
+  .action(async (opts: { label?: string }) => {
+    const id = randomUUID().slice(0, 8);
+    const label = opts.label ?? `shell:${path.basename(process.cwd())}`;
+    await registerSession({ id, label, cwd: process.cwd() });
+    const lines = Object.entries(proxyEnv(id)).map(([k, v]) => `export ${k}=${v}`);
     process.stdout.write(lines.join('\n') + '\n');
   });
 
@@ -89,13 +124,18 @@ program
   .command('run')
   .description('Run a command (e.g. "airlock run claude") with its traffic routed through airlock')
   .argument('<command...>', 'command and arguments to launch')
+  .option('--label <name>', 'name this session in the dashboard history')
   .allowUnknownOption()
   .passThroughOptions()
-  .action((command: string[]) => {
+  .action(async (command: string[], opts: { label?: string }) => {
     const [cmd, ...args] = command;
+    const id = randomUUID().slice(0, 8);
+    const label = opts.label ?? cmd;
+    await registerSession({ id, label, cwd: process.cwd(), command: command.join(' ') });
+    log.ok(`session "${label}" (${id}) routed through airlock`);
     const child = spawn(cmd, args, {
       stdio: 'inherit',
-      env: { ...process.env, ...proxyEnv() },
+      env: { ...process.env, ...proxyEnv(id) },
     });
     child.on('exit', (code, signal) => {
       if (signal) process.kill(process.pid, signal);

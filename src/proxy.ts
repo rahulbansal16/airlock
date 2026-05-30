@@ -33,6 +33,10 @@ export interface ProxyDeps {
 }
 
 export function startProxy({ config, ca, gate, store, allowlist }: ProxyDeps): http.Server {
+  // Maps the local port of an intercepted CONNECT tunnel to the session that
+  // opened it, so decrypted HTTPS requests can be attributed to a session.
+  const tunnelSession = new Map<number, string>();
+
   // Internal HTTPS endpoint that terminates TLS for intercepted CONNECT
   // tunnels, minting a cert per SNI host on the fly.
   const tlsTerminator = https.createServer({
@@ -55,14 +59,20 @@ export function startProxy({ config, ca, gate, store, allowlist }: ProxyDeps): h
 
   // HTTPS: accept CONNECT, then funnel the raw socket into the TLS terminator
   // so we can read the decrypted request.
-  proxy.on('connect', (_req, clientSocket, head) => {
+  proxy.on('connect', (req, clientSocket, head) => {
+    const session = sessionFromAuth(req.headers['proxy-authorization']);
     const addr = tlsTerminator.address();
     const port = typeof addr === 'object' && addr ? addr.port : 0;
     clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
     const upstream = net.connect(port, '127.0.0.1', () => {
+      // localPort is the remotePort the TLS terminator will see for this tunnel.
+      if (upstream.localPort) tunnelSession.set(upstream.localPort, session);
       if (head && head.length) upstream.write(head);
       clientSocket.pipe(upstream);
       upstream.pipe(clientSocket);
+    });
+    upstream.on('close', () => {
+      if (upstream.localPort) tunnelSession.delete(upstream.localPort);
     });
     upstream.on('error', () => clientSocket.destroy());
     clientSocket.on('error', () => upstream.destroy());
@@ -88,6 +98,10 @@ export function startProxy({ config, ca, gate, store, allowlist }: ProxyDeps): h
 
     const method = (req.method ?? 'GET').toUpperCase();
     const host = target.hostname;
+    const session =
+      scheme === 'https'
+        ? tunnelSession.get(req.socket.remotePort ?? -1) ?? 'default'
+        : sessionFromAuth(req.headers['proxy-authorization']);
     const verdict = gate.decide({ host, method });
 
     if (verdict.action === 'hold') {
@@ -97,6 +111,7 @@ export function startProxy({ config, ca, gate, store, allowlist }: ProxyDeps): h
         method,
         url: rawUrl,
         host,
+        session,
         headers: sanitizeHeaders(req.headers),
         bodyPreview: preview,
         bodyTruncated: truncated || body.length > config.bodyPreviewBytes,
@@ -109,11 +124,11 @@ export function startProxy({ config, ca, gate, store, allowlist }: ProxyDeps): h
         return res.end('airlock: request blocked by user\n');
       }
       if (decision.remember) allowlist.add(host);
-      log.ok(`allow ${method} ${rawUrl}${decision.remember ? ' (allowlisted)' : ''}`);
+      log.ok(`allow [${session}] ${method} ${rawUrl}${decision.remember ? ' (allowlisted)' : ''}`);
       return forward(target, req, res, scheme, body);
     }
 
-    store.logAuto(method, rawUrl, host, verdict.reason);
+    store.logAuto(method, rawUrl, host, session, verdict.reason);
     forward(target, req, res, scheme, null);
   }
 
@@ -171,6 +186,19 @@ function readBody(req: http.IncomingMessage, cap: number): Promise<{ body: Buffe
     req.on('end', () => resolve({ body: Buffer.concat(chunks), truncated }));
     req.on('error', () => resolve({ body: Buffer.concat(chunks), truncated }));
   });
+}
+
+/** Extract the session id that `airlock run`/`env` embeds as the proxy username. */
+function sessionFromAuth(header?: string): string {
+  if (!header) return 'default';
+  const m = /^Basic\s+(.+)$/i.exec(header.trim());
+  if (!m) return 'default';
+  try {
+    const user = Buffer.from(m[1], 'base64').toString('utf8').split(':')[0];
+    return user || 'default';
+  } catch {
+    return 'default';
+  }
 }
 
 function sanitizeHeaders(h: http.IncomingHttpHeaders): Record<string, string> {

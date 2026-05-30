@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store } from './store.js';
 import { Allowlist } from './allowlist.js';
+import { Sessions } from './sessions.js';
 import { Config } from './config.js';
 import { log } from './log.js';
 
@@ -13,15 +14,17 @@ export interface UiDeps {
   config: Config;
   store: Store;
   allowlist: Allowlist;
+  sessions: Sessions;
   caCertPem: string;
 }
 
-export function startUI({ config, store, allowlist, caCertPem }: UiDeps): http.Server {
+export function startUI({ config, store, allowlist, sessions, caCertPem }: UiDeps): http.Server {
   const indexHtml = fs.readFileSync(path.join(here, 'public', 'index.html'), 'utf8');
 
   const liveState = () => ({
     ...store.snapshot(),
     allowlist: allowlist.list(),
+    sessions: sessions.list(),
     config: { proxyPort: config.proxyPort, uiPort: config.uiPort, gateSafeMethods: config.gateSafeMethods },
   });
 
@@ -51,6 +54,20 @@ export function startUI({ config, store, allowlist, caCertPem }: UiDeps): http.S
           remember: !!b.remember,
         });
         return json(res, ok ? 200 : 404, { ok });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/session') {
+        const b = await readJson(req);
+        if (b.id) {
+          sessions.register({
+            id: String(b.id),
+            label: b.label ? String(b.label) : undefined,
+            cwd: b.cwd ? String(b.cwd) : undefined,
+            command: b.command ? String(b.command) : undefined,
+          });
+          store.emit('update');
+          return json(res, 200, { ok: true });
+        }
+        return json(res, 400, { ok: false });
       }
       if (req.method === 'POST' && url.pathname === '/api/allowlist') {
         const b = await readJson(req);
