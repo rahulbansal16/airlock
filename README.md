@@ -1,116 +1,170 @@
-# airlock
+<div align="center">
 
-A human-in-the-loop approval proxy for outbound requests made during a **Claude Code** session.
+# 🔒 Airlock
 
-`airlock` runs a local forward proxy plus a small web UI. When a Claude Code
-session (or any tool it spawns — `curl`, `wget`, MCP servers, `WebFetch`) makes
-an outbound request, airlock decides what to do:
+### See and approve every request your Claude Code agent makes, in real time.
 
-- **GET / HEAD / OPTIONS** (read-only) and any **allowlisted host** flow through automatically.
-- Any **`POST` / `PUT` / `DELETE` / `PATCH` to a host that isn't on your allowlist is held** and shown in the UI with its method, URL, headers and body. The request proceeds only when you click **Approve** — or you can **Deny** it (the client gets a `403`).
+Airlock is a local approval proxy and live dashboard for [Claude Code](https://claude.com/claude-code). It pauses risky writes such as POST, PUT, DELETE and PATCH, then waits for your click before they ever leave your machine. Read traffic and hosts you trust flow straight through, so your agent stays fast while you stay in control.
 
-Because the proxy performs TLS interception with a locally-trusted CA, it can
-see the method and URL even for HTTPS requests.
+[![License: MIT](https://img.shields.io/badge/license-MIT-3da639.svg)](LICENSE)
+[![Built for Claude Code](https://img.shields.io/badge/built%20for-Claude%20Code-d97757.svg)](https://claude.com/claude-code)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-388bfd.svg)](#contributing)
+[![Star on GitHub](https://img.shields.io/github/stars/rahulbansal16/airlock?style=social)](https://github.com/rahulbansal16/airlock)
 
+[Quick start](#quick-start) &nbsp;•&nbsp; [Why Airlock](#why-airlock) &nbsp;•&nbsp; [How it works](#how-it-works) &nbsp;•&nbsp; [Commands](#commands) &nbsp;•&nbsp; [FAQ](#faq)
+
+</div>
+
+<br/>
+
+## Why Airlock
+
+AI coding agents are powerful because they can act on their own. They can call APIs, push data, delete records and reach any endpoint they like. Most of the time that is exactly what you want. Sometimes it is the one request you wish you had seen first.
+
+Airlock gives your agent a glass door. Every outbound call is visible. The dangerous ones stop and ask. You approve with one click, or you block it, and the agent keeps working with no broken sessions and no guesswork.
+
+> Think of it as a code review step for network traffic, running live while your agent works.
+
+## What you get
+
+- ✅ **Live approval dashboard** for outbound traffic, served on your own machine at `http://127.0.0.1:9001`
+- ✅ **Writes pause, reads pass.** POST, PUT, DELETE and PATCH to any host you have not trusted yet are held for approval. GET, HEAD and OPTIONS flow through.
+- ✅ **One click to always trust a host.** Approve once and Airlock remembers it in a persistent allowlist across every future session.
+- ✅ **Full request detail.** Method, URL, headers and body, even over HTTPS, thanks to local TLS interception with a certificate that never leaves your laptop.
+- ✅ **Works with everything your agent spawns.** Claude Code itself, MCP servers, WebFetch, plus `curl`, `wget` and Python scripts run inside Bash.
+- ✅ **Zero config to start.** The Anthropic API is trusted out of the box so your agent can always think.
+
+## Demo
+
+```text
+┌──────────────────────────────────────────── AIRLOCK ─ live ──┐
+│  Pending approval (1)                                         │
+│                                                              │
+│  [ POST ]  https://api.stripe.com/v1/charges                 │
+│  ▸ headers & body (218 bytes)                                │
+│                                                              │
+│     [ Approve ]  [ Approve & always allow api.stripe.com ]   │
+│     [ Deny ]                                                 │
+│                                                              │
+│  Allowlist:  api.anthropic.com   api.github.com              │
+│                                                              │
+│  Recent activity                                             │
+│   12:04:51  approved   POST  https://api.github.com/repos…   │
+│   12:04:48  auto       GET   https://registry.npmjs.org/…    │
+└──────────────────────────────────────────────────────────────┘
 ```
-   Claude Code ──HTTP(S)_PROXY──▶  airlock proxy ──▶  ?  ──▶  the internet
-                                        │
-                                        ▼
-                                  approval UI  ◀── you click Approve / Deny
-```
 
-## Install
+## Quick start
+
+Install Airlock once and use it from any project.
 
 ```bash
-npm install -g airlock-proxy      # or: npm link from a clone
+npm install -g airlock-proxy
 ```
 
-From a clone:
-
-```bash
-npm install
-npm run build
-npm link        # exposes the `airlock` command globally
-```
-
-## Use
-
-**1. Start the proxy + UI** (leave it running in its own terminal):
+Start the proxy and the dashboard in their own terminal and leave it running.
 
 ```bash
 airlock start
-# proxy on http://127.0.0.1:9000, approval UI on http://127.0.0.1:9001
 ```
 
-Open the UI at **http://127.0.0.1:9001**.
-
-**2. Run a Claude Code session through it.** Either inject the env and run inline:
+Open the dashboard at **http://127.0.0.1:9001**, then launch Claude Code through Airlock.
 
 ```bash
 airlock run claude
 ```
 
-…or export the variables into your current shell:
+That is it. From now on, every write your agent attempts shows up in the dashboard and waits for your approval. Prefer to wire your current shell instead?
 
 ```bash
 eval "$(airlock env)"
 claude
 ```
 
-Now every mutating request the session attempts pauses in the UI until you
-approve it. Click **"Approve & always allow `<host>`"** to add the host to your
-persistent allowlist so it never prompts again.
+## How it works
+
+Claude Code and the tools it spawns honor the standard `HTTP_PROXY` and `HTTPS_PROXY` settings. Airlock points them at a tiny proxy running on your own machine. To read the method and URL of encrypted HTTPS calls, it terminates TLS locally using a root certificate it generates once and keeps in `~/.airlock`. The private key stays on your laptop.
+
+```text
+   Claude Code  ──►  HTTPS_PROXY  ──►  Airlock proxy  ──►  the internet
+                                            │
+                                            ▼
+                                    approval dashboard
+                                            │
+                                   you click Approve or Deny
+```
+
+Every request is checked against one simple rule.
+
+```text
+  host is on your allowlist            ──►  allow
+  method is POST, PUT, DELETE, PATCH   ──►  hold for your approval
+  method is GET, HEAD, OPTIONS         ──►  allow
+```
+
+Want to review reads too? Start with `airlock start --gate-reads` and Airlock will pause every method.
 
 ## Commands
 
-| Command | Description |
-| --- | --- |
-| `airlock start` | Start the proxy and approval UI. `--proxy-port`, `--ui-port`, `--gate-reads` (also gate GET/HEAD/OPTIONS). |
-| `airlock run <cmd…>` | Launch a command with traffic routed through airlock (e.g. `airlock run claude`). |
-| `airlock env` | Print shell `export` lines (`eval "$(airlock env)"`). |
-| `airlock status` | Show whether airlock is running and any pending approvals. |
-| `airlock allow [host]` | List the allowlist, or add a host to it. |
-| `airlock ca` | Print the path to the root CA certificate. |
+- **`airlock start`** starts the proxy and the approval dashboard. Flags: `--proxy-port`, `--ui-port`, `--gate-reads`.
+- **`airlock run <command>`** launches any command with its traffic routed through Airlock, for example `airlock run claude`.
+- **`airlock env`** prints the shell exports to route your current shell. Use it as `eval "$(airlock env)"`.
+- **`airlock status`** shows whether Airlock is running and how many requests are waiting.
+- **`airlock allow [host]`** lists your allowlist, or adds a host to it.
+- **`airlock ca`** prints the path to the root certificate.
 
-## How requests are gated
+## Trusting the certificate
 
+To show you the contents of HTTPS calls, Airlock signs traffic with a root certificate stored at `~/.airlock/ca.crt`. The `airlock run` and `airlock env` commands point Node, curl and Python at it automatically, using a bundle of your system roots plus the Airlock root so the rest of your TLS keeps working. To trust it everywhere, import `~/.airlock/ca.crt` into your operating system or browser, or download it from `http://127.0.0.1:9001/airlock-ca.crt`.
+
+## Where state lives
+
+Everything sits under `~/.airlock`, which you can move with the `AIRLOCK_HOME` variable.
+
+- **`ca.crt` and `ca.key`** are your root certificate and its private key.
+- **`ca-bundle.crt`** is your system roots plus the Airlock root, for curl and Python.
+- **`allowlist.json`** is your saved list of trusted hosts, seeded with the Anthropic API.
+- **`daemon.json`** records the ports the running proxy and dashboard use.
+
+## FAQ
+
+**Does this slow my agent down?**
+No. Reads and trusted hosts pass straight through. Only writes to a host you have not approved yet wait for you, and approving one is a single click.
+
+**Does it capture my Anthropic API key or other secrets?**
+The dashboard redacts sensitive headers such as `authorization`, `cookie` and `x-api-key` before it shows a request. Nothing is sent anywhere. Everything runs on your machine.
+
+**Will it break the Claude Code session?**
+The Anthropic API is trusted out of the box, so the agent can always reach the model. A denied request returns a clean `403` to the caller, which the agent simply sees as a failed call.
+
+**What does it not cover?**
+Only traffic that honors proxy settings is intercepted. Most tools do, including Node fetch, curl and Python requests. A binary that ignores proxy settings will not be seen.
+
+**Is this a security boundary?**
+Airlock is a developer tool for visibility and oversight, not a hardened sandbox. Pair it with real isolation if you need a strict boundary.
+
+## Roadmap
+
+- A native Claude Code hook layer for tool level approval alongside the proxy
+- Rules by URL path and by request body content
+- Desktop notifications when a request is waiting
+- Shareable team allowlists
+
+## Contributing
+
+Issues and pull requests are very welcome. To build from source:
+
+```bash
+git clone https://github.com/rahulbansal16/airlock
+cd airlock
+npm install
+npm run build
+npm link
 ```
-allowlisted host?  ──▶ allow
-mutating method (POST/PUT/DELETE/PATCH)?  ──▶ hold for approval
-otherwise (GET/HEAD/OPTIONS)  ──▶ allow
-```
 
-Pass `--gate-reads` to `airlock start` to require approval for read methods too.
-
-## The CA certificate
-
-To read HTTPS methods/URLs, airlock terminates TLS using a root CA generated
-once at `~/.airlock/ca.crt`. The `airlock env` / `airlock run` commands point
-Node, curl, Python and friends at it via `NODE_EXTRA_CA_CERTS`,
-`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` (a bundle of your
-system roots **plus** the airlock CA, so other TLS still works). The CA private
-key never leaves your machine. To trust it system-wide, import `~/.airlock/ca.crt`
-into your OS/browser trust store, or download it from
-`http://127.0.0.1:9001/airlock-ca.crt`.
-
-## State on disk
-
-Everything lives under `~/.airlock/` (override with `AIRLOCK_HOME`):
-
-- `ca.crt` / `ca.key` — the root CA.
-- `ca-bundle.crt` — system roots + airlock CA, for curl/python.
-- `allowlist.json` — your persistent allowlist (seeded with the Anthropic API so the session can always reach the model).
-- `daemon.json` — the running proxy/UI ports.
-
-## Limitations
-
-- Only traffic that honours `HTTP_PROXY`/`HTTPS_PROXY` is intercepted. Most
-  tools (Node `fetch`/undici, curl, requests) do; statically-linked or
-  proxy-ignoring binaries may not.
-- Held request bodies are buffered up to 25 MB; larger bodies are forwarded
-  truncated for display purposes.
-- This is a local developer tool, not a hardened security boundary.
+If Airlock saves you from one request you did not want to send, please star the repo so more people find it.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
