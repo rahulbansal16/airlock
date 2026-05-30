@@ -175,6 +175,22 @@ Airlock is a developer tool for visibility and oversight, not a hardened sandbox
 - Desktop notifications when a request is waiting
 - Shareable team allowlists
 
+## Future scope
+
+Today Airlock asks you to approve requests by hand. The longer term goal is to make that the exception rather than the rule. We want to grow Airlock from a manual gate into a monitoring and policy engine for everything your agents do on the network.
+
+**See which agent is using which resources.** As teams run more agents at once, including Claude Code, its sub agents, and the MCP servers they call, you lose track of who is reaching what. Airlock will attribute every request not just to a session but to the specific agent and tool behind it, then show usage per agent: which APIs each one calls, how often, how much data moves, and what it costs. You get one clear map of how your agents touch the outside world.
+
+**A firewall that learns, so you stop clicking.** Airlock already remembers the hosts you trust. The next step is to learn the full shape of what you approve and deny, then turn that into policy that runs on its own. Routine and safe requests pass without a prompt. Only the genuinely new or risky ones reach you. Planned building blocks include:
+
+- Policies as code that you can review, version and share across a team
+- Suggested rules drawn from your own approval history, with one click to adopt them
+- Limits on rate, spend and data volume per agent, per host and per session
+- Anomaly detection that flags a request which does not fit an agent's normal behavior, even when the destination is on the allowlist
+- A central audit trail of every request and decision for security and compliance reviews
+
+The end state is simple to describe. Your agents move fast, you keep full visibility, and you are asked to step in only when it truly matters.
+
 ## Contributing
 
 Issues and pull requests are very welcome. To build from source:
