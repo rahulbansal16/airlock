@@ -59,11 +59,22 @@ Airlock gives your agent a glass door. Every outbound call is visible. The dange
 
 ## Quick start
 
-Install Airlock once and use it from any project.
+Airlock needs Node 20 or newer. Install it once and use it from any project. This command clones, builds and links the `airlock` command for you.
 
 ```bash
-npm install -g airlock-proxy
+npm install -g github:rahulbansal16/airlock
 ```
+
+Prefer a local checkout? Clone it and link instead.
+
+```bash
+git clone https://github.com/rahulbansal16/airlock
+cd airlock
+npm install        # builds automatically through the prepare step
+npm link           # puts the airlock command on your PATH
+```
+
+A published package on the npm registry is on the way. Once it lands you will also be able to run `npm install -g airlock-proxy`.
 
 Start the proxy and the dashboard in their own terminal and leave it running.
 
@@ -163,6 +174,22 @@ Airlock is a developer tool for visibility and oversight, not a hardened sandbox
 - Rules by URL path and by request body content
 - Desktop notifications when a request is waiting
 - Shareable team allowlists
+
+## Future scope
+
+Today Airlock asks you to approve requests by hand. The longer term goal is to make that the exception rather than the rule. We want to grow Airlock from a manual gate into a monitoring and policy engine for everything your agents do on the network.
+
+**See which agent is using which resources.** As teams run more agents at once, including Claude Code, its sub agents, and the MCP servers they call, you lose track of who is reaching what. Airlock will attribute every request not just to a session but to the specific agent and tool behind it, then show usage per agent: which APIs each one calls, how often, how much data moves, and what it costs. You get one clear map of how your agents touch the outside world.
+
+**A firewall that learns, so you stop clicking.** Airlock already remembers the hosts you trust. The next step is to learn the full shape of what you approve and deny, then turn that into policy that runs on its own. Routine and safe requests pass without a prompt. Only the genuinely new or risky ones reach you. Planned building blocks include:
+
+- Policies as code that you can review, version and share across a team
+- Suggested rules drawn from your own approval history, with one click to adopt them
+- Limits on rate, spend and data volume per agent, per host and per session
+- Anomaly detection that flags a request which does not fit an agent's normal behavior, even when the destination is on the allowlist
+- A central audit trail of every request and decision for security and compliance reviews
+
+The end state is simple to describe. Your agents move fast, you keep full visibility, and you are asked to step in only when it truly matters.
 
 ## Contributing
 

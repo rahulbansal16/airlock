@@ -11,8 +11,29 @@
   ],
   "scripts": {
     "build": "tsc && node -e \"const fs=require('fs');fs.mkdirSync('dist/public',{recursive:true});fs.copyFileSync('src/public/index.html','dist/public/index.html')\"",
+    "prepare": "npm run build",
     "start": "node dist/cli.js start",
     "dev": "node --experimental-strip-types src/cli.ts start"
+  },
+  "keywords": [
+    "claude-code",
+    "ai-agents",
+    "mcp",
+    "proxy",
+    "human-in-the-loop",
+    "ai-safety",
+    "guardrails",
+    "approval",
+    "firewall",
+    "developer-tools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rahulbansal16/airlock.git"
+  },
+  "homepage": "https://github.com/rahulbansal16/airlock#readme",
+  "bugs": {
+    "url": "https://github.com/rahulbansal16/airlock/issues"
   },
   "engines": {
     "node": ">=20"
