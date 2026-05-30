@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>airlock</title>
+    <style>
+      :root {
+        --bg: #0e1116;
+        --panel: #161b22;
+        --panel2: #1c232c;
+        --border: #2b333d;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --green: #2ea043;
+        --red: #da3633;
+        --amber: #d29922;
+        --blue: #388bfd;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+        position: sticky;
+        top: 0;
+        z-index: 5;
+      }
+      header h1 { font-size: 16px; margin: 0; letter-spacing: 0.5px; }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+      .grow { flex: 1; }
+      .muted { color: var(--muted); }
+      main { max-width: 980px; margin: 0 auto; padding: 20px; }
+      h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin: 28px 0 12px; }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel);
+        margin-bottom: 12px;
+        overflow: hidden;
+      }
+      .card.pending { border-color: var(--amber); }
+      .row { display: flex; align-items: center; gap: 10px; padding: 12px 14px; flex-wrap: wrap; }
+      .method {
+        font-weight: 700;
+        font-size: 12px;
+        padding: 3px 8px;
+        border-radius: 6px;
+        background: var(--panel2);
+      }
+      .method.POST, .method.PUT, .method.PATCH { color: var(--amber); }
+      .method.DELETE { color: var(--red); }
+      .method.GET, .method.HEAD { color: var(--blue); }
+      .url { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; flex: 1; min-width: 240px; }
+      .host { color: var(--muted); font-size: 12px; }
+      .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+      button {
+        font: inherit;
+        font-weight: 600;
+        border: 1px solid var(--border);
+        background: var(--panel2);
+        color: var(--text);
+        padding: 7px 12px;
+        border-radius: 7px;
+        cursor: pointer;
+      }
+      button:hover { border-color: var(--muted); }
+      button.approve { background: var(--green); border-color: var(--green); color: #fff; }
+      button.always { background: transparent; border-color: var(--green); color: var(--green); }
+      button.deny { background: var(--red); border-color: var(--red); color: #fff; }
+      .details { border-top: 1px solid var(--border); padding: 10px 14px; display: none; background: var(--panel2); }
+      .card.open .details { display: block; }
+      .details pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; color: var(--muted); max-height: 260px; overflow: auto; }
+      .toggle { cursor: pointer; color: var(--muted); font-size: 12px; user-select: none; }
+      .empty { color: var(--muted); padding: 18px; text-align: center; border: 1px dashed var(--border); border-radius: 10px; }
+      .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+      .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+      .chip button { padding: 0 4px; border: 0; background: transparent; color: var(--muted); }
+      .hist { font-family: ui-monospace, monospace; font-size: 12px; padding: 6px 14px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; }
+      .hist:last-child { border-bottom: 0; }
+      .tag { font-size: 11px; padding: 1px 7px; border-radius: 5px; background: var(--panel2); color: var(--muted); }
+      .tag.approved { color: var(--green); }
+      .tag.denied { color: var(--red); }
+      .histhead { display: flex; align-items: center; margin: 28px 0 12px; }
+      .histhead select { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; margin-left: 6px; }
+      .session { font-size: 11px; padding: 1px 7px; border-radius: 5px; background: var(--panel2); color: var(--blue); cursor: pointer; }
+      .chip.active { border-color: var(--blue); }
+      .chip .count { color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="dot" id="dot"></span>
+      <h1>AIRLOCK</h1>
+      <span class="muted" id="mode"></span>
+      <span class="grow"></span>
+      <span class="muted" id="conn">connecting…</span>
+    </header>
+    <main>
+      <h2>Pending approval <span id="pcount" class="muted"></span></h2>
+      <div id="pending"></div>
+
+      <h2>Sessions</h2>
+      <div class="chips" id="sessions"></div>
+
+      <h2>Allowlist</h2>
+      <div class="chips" id="allowlist"></div>
+
+      <div class="histhead">
+        <h2 style="margin:0">Activity</h2>
+        <span class="grow"></span>
+        <label class="muted" style="font-size:12px">filter
+          <select id="filter" onchange="setFilter(this.value)">
+            <option value="">all sessions</option>
+          </select>
+        </label>
+      </div>
+      <div class="card" id="history"></div>
+    </main>
+
+    <script>
+      const el = (id) => document.getElementById(id);
+      const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      const open = new Set();
+      let filter = '';
+      let labels = {};
+
+      function setFilter(v) {
+        filter = v;
+        if (lastState) render(lastState);
+      }
+
+      let lastState = null;
+      function render(state) {
+        lastState = state;
+        labels = {};
+        (state.sessions || []).forEach((s) => (labels[s.id] = s.label));
+        el('mode').textContent = state.config
+          ? 'gating ' + (state.config.gateSafeMethods ? 'all methods' : 'POST/PUT/DELETE/PATCH')
+          : '';
+        const pending = state.pending || [];
+        el('pcount').textContent = pending.length ? '(' + pending.length + ')' : '';
+
+        el('pending').innerHTML =
+          pending.length === 0
+            ? '<div class="empty">No requests waiting. Mutating requests to non-allowlisted hosts will appear here.</div>'
+            : pending.map(renderPending).join('');
+
+        el('sessions').innerHTML = (state.sessions || []).length
+          ? state.sessions
+              .map(
+                (s) =>
+                  '<span class="chip' + (filter === s.id ? ' active' : '') + '" onclick="setFilter(\'' +
+                  esc(s.id) + '\')" title="' + esc(s.cwd || '') + '">' + esc(s.label) +
+                  ' <span class="count">' + s.requests + '</span></span>',
+              )
+              .join('')
+          : '<span class="muted">No sessions yet. Start one with <code>airlock run claude</code>.</span>';
+
+        const sel = el('filter');
+        const opts = ['<option value="">all sessions</option>']
+          .concat((state.sessions || []).map((s) => '<option value="' + esc(s.id) + '">' + esc(s.label) + '</option>'));
+        sel.innerHTML = opts.join('');
+        sel.value = filter;
+
+        el('allowlist').innerHTML = (state.allowlist || [])
+          .map(
+            (h) =>
+              '<span class="chip">' +
+              esc(h) +
+              '<button title="remove" onclick="removeHost(\'' +
+              esc(h) +
+              '\')">&times;</button></span>',
+          )
+          .join('');
+
+        const rows = (state.history || [])
+          .filter((h) => !filter || h.session === filter)
+          .slice(0, 60)
+          .map((h) => {
+            const cls = h.outcome.startsWith('approved') ? 'approved' : h.outcome === 'denied' ? 'denied' : '';
+            const t = new Date(h.at).toLocaleTimeString();
+            const label = labels[h.session] || h.session || 'default';
+            return (
+              '<div class="hist"><span class="muted">' +
+              t +
+              '</span><span class="session" onclick="setFilter(\'' +
+              esc(h.session) +
+              '\')">' +
+              esc(label) +
+              '</span><span class="tag ' +
+              cls +
+              '">' +
+              esc(h.outcome) +
+              '</span><b>' +
+              esc(h.method) +
+              '</b><span class="url">' +
+              esc(h.url) +
+              '</span></div>'
+            );
+          })
+          .join('');
+        el('history').innerHTML = rows || '<div class="empty">Nothing yet.</div>';
+      }
+
+      function renderPending(r) {
+        const isOpen = open.has(r.id) ? ' open' : '';
+        const headers = Object.entries(r.headers || {})
+          .map(([k, v]) => k + ': ' + v)
+          .join('\n');
+        const body = r.bodyPreview ? r.bodyPreview + (r.bodyTruncated ? '\n… [truncated]' : '') : '(no body)';
+        return (
+          '<div class="card pending' +
+          isOpen +
+          '" id="card-' +
+          r.id +
+          '">' +
+          '<div class="row">' +
+          '<span class="method ' +
+          esc(r.method) +
+          '">' +
+          esc(r.method) +
+          '</span>' +
+          '<span class="url">' +
+          esc(r.url) +
+          '</span>' +
+          '<span class="session" title="originating session">' +
+          esc(labels[r.session] || r.session || 'default') +
+          '</span>' +
+          '</div>' +
+          '<div class="row">' +
+          '<span class="toggle" onclick="toggle(\'' +
+          r.id +
+          '\')">▸ headers &amp; body (' +
+          r.bodyBytes +
+          ' bytes)</span>' +
+          '<span class="grow"></span>' +
+          '<span class="btns">' +
+          '<button class="approve" onclick="decide(\'' + r.id + '\',\'allow\',false)">Approve</button>' +
+          '<button class="always" onclick="decide(\'' + r.id + '\',\'allow\',true)">Approve &amp; always allow ' + esc(r.host) + '</button>' +
+          '<button class="deny" onclick="decide(\'' + r.id + '\',\'deny\',false)">Deny</button>' +
+          '</span>' +
+          '</div>' +
+          '<div class="details"><b>Headers</b><pre>' +
+          esc(headers) +
+          '</pre><b>Body</b><pre>' +
+          esc(body) +
+          '</pre></div>' +
+          '</div>'
+        );
+      }
+
+      function toggle(id) {
+        open.has(id) ? open.delete(id) : open.add(id);
+        const card = el('card-' + id);
+        if (card) card.classList.toggle('open');
+      }
+
+      async function decide(id, decision, remember) {
+        await fetch('/api/decision', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id, decision, remember }),
+        });
+      }
+
+      async function removeHost(host) {
+        await fetch('/api/allowlist', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'remove', host }),
+        });
+      }
+
+      function connect() {
+        const es = new EventSource('/api/stream');
+        es.onmessage = (e) => {
+          el('conn').textContent = 'live';
+          el('dot').style.background = 'var(--green)';
+          render(JSON.parse(e.data));
+        };
+        es.onerror = () => {
+          el('conn').textContent = 'reconnecting…';
+          el('dot').style.background = 'var(--amber)';
+        };
+      }
+      connect();
+    </script>
+  </body>
+</html>
