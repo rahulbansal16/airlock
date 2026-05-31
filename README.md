@@ -55,7 +55,12 @@ Airlock gives your agent a glass door. Every outbound call is visible. The dange
 │   12:04:51  refactor-auth   approved   POST  api.github.com  │
 │   12:04:48  nightly-deploy  auto       GET   registry.npmjs  │
 └──────────────────────────────────────────────────────────────┘
+
 ```
+
+
+<img width="1144" height="777" alt="image" src="https://github.com/user-attachments/assets/ad119894-8c23-442f-9c6c-3a01eb886d94" />
+
 
 ## Quick start
 
